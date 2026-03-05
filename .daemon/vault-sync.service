@@ -1,0 +1,25 @@
+# Legacy systemd reference — use ecosystem.config.cjs with pm2 instead
+[Unit]
+Description=Vault Sync Daemon
+After=network.target
+
+[Service]
+Type=notify
+NotifyAccess=all
+WorkingDirectory=/home/YOUR_USER/vault/.daemon
+ExecStart=/usr/bin/node /home/YOUR_USER/vault/.daemon/daemon.js
+Restart=always
+RestartSec=10
+WatchdogSec=30
+
+# Environment
+Environment=NODE_ENV=production
+EnvironmentFile=/home/YOUR_USER/vault/.daemon/.env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vault-sync
+
+[Install]
+WantedBy=default.target
