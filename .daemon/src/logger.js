@@ -1,5 +1,12 @@
 import pino from 'pino';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { config as loadEnv } from 'dotenv';
+
+// Load .env early — logger is imported before config.js runs dotenv,
+// so we must load it here to get VAULT_PATH for the log file path.
+const __dirname = dirname(fileURLToPath(import.meta.url));
+loadEnv({ path: join(__dirname, '..', '.env') });
 
 // VAULT_PATH is required — validated at startup in config.js
 export const logger = pino({

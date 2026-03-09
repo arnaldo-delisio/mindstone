@@ -1,8 +1,11 @@
 import { config as loadEnv } from 'dotenv';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-// Load .env file
-loadEnv();
+// Load .env from .daemon/.env (relative to this file's location)
+// Required because pm2 sets cwd to repo root, but .env lives in .daemon/
+const __dirname = dirname(fileURLToPath(import.meta.url));
+loadEnv({ path: join(__dirname, '..', '.env') });
 
 // Validate required environment variables
 const required = [

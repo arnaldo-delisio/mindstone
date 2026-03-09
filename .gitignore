@@ -1,0 +1,25 @@
+# Environment files — never commit secrets
+.daemon/.env
+.intelligence/.env
+
+# Node modules
+node_modules/
+*/node_modules/
+
+# Build output
+.intelligence/dist/
+*/dist/
+
+# Sync daemon state — local to each deployer
+.sync/
+**/.sync/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
