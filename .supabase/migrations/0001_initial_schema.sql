@@ -175,6 +175,11 @@ CREATE TABLE IF NOT EXISTS gcal_sync_state (
 -- Enable RLS on files table — all policies enforce single-user ownership
 ALTER TABLE files ENABLE ROW LEVEL SECURITY;
 
+-- REPLICA IDENTITY FULL required for Supabase Realtime DELETE events to include old record data.
+-- Without this, DELETE events arrive with old: {} (empty) and the daemon cannot determine
+-- which local file to delete. Must be set BEFORE any Realtime DELETE subscriptions.
+ALTER TABLE files REPLICA IDENTITY FULL;
+
 -- Critical: (select auth.uid()) wrapper enables Postgres query planner caching.
 -- Without wrapper, auth.uid() is called per row, causing performance degradation at 10K+ files.
 

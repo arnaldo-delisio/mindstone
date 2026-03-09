@@ -4,7 +4,6 @@ import { createWatcher } from './src/watcher.js';
 import { syncFile } from './src/syncer.js';
 import { RetryQueue } from './src/retry-queue.js';
 import { HealthMonitor } from './src/health.js';
-import { SessionAnalyzer } from './src/session-analyzer.js';
 import { RealtimeSubscription } from './src/realtime.js';
 import { Downloader } from './src/downloader.js';
 import { FallbackPoller } from './src/fallback-poller.js';
@@ -12,17 +11,13 @@ import { Reconciliation } from './src/reconciliation.js';
 import { logger } from './src/logger.js';
 import { config } from './src/config.js';
 import { supabase } from './src/supabase-client.js';
-import { deleteGcalEvent, isGcalEnabled } from '../.intelligence/dist/services/gcal.js';
 import { join, relative } from 'node:path';
 import { mkdir, stat, unlink } from 'node:fs/promises';
-import * as systemdNotify from './src/systemd-notify.js';
 
 let watcher = null;
 let isShuttingDown = false;
 let retryQueue = null;
 let health = null;
-let sessionAnalyzer = null;
-let watchdogInterval = null;
 let realtimeSubscription = null;
 let downloader = null;
 let fallbackPoller = null;
@@ -41,15 +36,8 @@ async function handleRealtimeEvent(payload) {
     await retryQueue.queue.add(async () => {
       try {
         await downloader.downloadFile(newRecord);
-        sessionAnalyzer?.trackOperation('cloud_download', newRecord.path, {
-          eventType,
-          cloudHash: newRecord.content_hash
-        });
       } catch (error) {
         logger.error({ path: newRecord.path, error: error.message }, 'Download failed');
-        sessionAnalyzer?.trackOperation('download_failed', newRecord.path, {
-          error: error.message
-        });
       }
     });
   }
@@ -66,12 +54,11 @@ async function handleRealtimeEvent(payload) {
       logger.debug({ path }, 'DELETE echo detected (local deletion triggered this), skipping');
       return;
     }
-    // Supabase record deleted externally (MCP tool, gcal-poller) → delete local file
+    // Supabase record deleted externally (MCP tool) → delete local file
     const localPath = join(config.vault.path, path);
     try {
       await unlink(localPath);
       logger.info({ path, localPath }, 'Supabase DELETE → local file removed');
-      sessionAnalyzer?.trackOperation('cloud_delete', path);
     } catch (err) {
       if (err.code === 'ENOENT') {
         logger.debug({ path }, 'Local file already gone, nothing to delete');
@@ -103,10 +90,6 @@ async function start() {
   await health.update({ watcher_status: 'starting' });
   await health.startPeriodicWrite(); // Write every 30 seconds (REL-05)
 
-  // Initialize session analysis
-  const sessionLogPath = join(config.vault.syncDir, `session-${Date.now()}.json`);
-  sessionAnalyzer = new SessionAnalyzer(sessionLogPath);
-
   // Track files synced during initial sync to prevent watcher race condition
   // Prevents local files from overwriting fresh intelligence updates in Supabase
   const recentlySyncedFiles = new Set();
@@ -115,28 +98,17 @@ async function start() {
   watcher = createWatcher({
     recentlySyncedFiles,
     onAdd: async (path) => {
-      sessionAnalyzer.trackOperation('file_created', path);
       await handleFileSync(path, 'add');
     },
     onChange: async (path) => {
-      sessionAnalyzer.trackOperation('file_changed', path);
       await handleFileSync(path, 'change');
     },
     onUnlink: async (path) => {
-      sessionAnalyzer.trackOperation('file_deleted', path);
       const relativePath = relative(config.vault.path, path);
       // Track for echo prevention before issuing Supabase DELETE
       recentlyDeleted.add(relativePath);
       setTimeout(() => recentlyDeleted.delete(relativePath), 30000);
       try {
-        // Read gcal_event_id from Supabase before deleting the row (file is already gone)
-        const { data: fileRow } = await supabase
-          .from('files')
-          .select('gcal_event_id, gcal_calendar')
-          .eq('path', relativePath)
-          .eq('user_id', config.supabase.userId)
-          .single();
-
         const { error } = await supabase
           .from('files')
           .delete()
@@ -146,12 +118,6 @@ async function start() {
           logger.error({ path: relativePath, err: error.message }, 'Failed to delete file from Supabase');
         } else {
           logger.info({ path: relativePath }, 'Local delete → Supabase record removed');
-        }
-
-        // Delete from GCal if this was a synced event
-        if (fileRow?.gcal_event_id && isGcalEnabled()) {
-          await deleteGcalEvent(fileRow.gcal_event_id, fileRow.gcal_calendar ?? undefined);
-          logger.info({ gcal_event_id: fileRow.gcal_event_id }, 'Local delete → GCal event deleted');
         }
       } catch (err) {
         logger.error({ path: relativePath, err: err.message }, 'Unexpected error deleting from Supabase');
@@ -233,32 +199,6 @@ async function start() {
   }, 'Periodic reconciliation started');
 
   logger.info('Daemon started successfully');
-
-  // Signal systemd that daemon is ready (Type=notify)
-  try {
-    await systemdNotify.ready();
-    logger.debug('Sent ready notification to systemd');
-  } catch (err) {
-    logger.warn({ err }, 'Failed to send ready notification (systemd not available)');
-  }
-
-  // Start watchdog keepalive pings if running under systemd
-  // WatchdogSec=30 in service file, so ping every 15 seconds (half interval for safety)
-  if (process.env.NOTIFY_SOCKET) {
-    const watchdogMs = 30000; // 30 seconds to match WatchdogSec=30
-    const pingIntervalMs = 15000; // Ping at half interval for safety margin
-
-    watchdogInterval = setInterval(async () => {
-      try {
-        await systemdNotify.watchdog();
-        logger.debug({ watchdogMs, pingIntervalMs }, 'Sent watchdog ping');
-      } catch (err) {
-        logger.warn({ err }, 'Failed to send watchdog ping');
-      }
-    }, pingIntervalMs);
-
-    logger.info({ watchdogMs, pingIntervalMs }, 'Watchdog keepalive started');
-  }
 }
 
 async function handleFileSync(filePath, eventType) {
@@ -287,11 +227,6 @@ async function handleFileSync(filePath, eventType) {
           localTime: localModifiedAt.toISOString()
         }, 'Cloud version newer than local, downloading instead of uploading');
 
-        sessionAnalyzer.trackOperation('download_instead_of_upload', filePath, {
-          cloudTime: cloudUpdatedAt,
-          localTime: localModifiedAt
-        });
-
         // Download the newer cloud version
         try {
           const fullCloudRecord = await supabase
@@ -316,18 +251,12 @@ async function handleFileSync(filePath, eventType) {
     // Proceed with upload - local is newer or file doesn't exist in cloud
     const result = await syncFile(filePath);
 
-    // Record in health and session
+    // Record in health
     health.recordSync(filePath, result);
 
     if (result.synced) {
-      sessionAnalyzer.trackOperation('sync_completed', filePath, {
-        contentHash: result.contentHash
-      });
       logger.info({ filePath, eventType }, 'File synced successfully');
     } else if (result.skipped) {
-      sessionAnalyzer.trackOperation('sync_skipped', filePath, {
-        reason: result.reason
-      });
       logger.warn({ filePath, reason: result.reason }, 'File sync skipped');
     }
 
@@ -337,10 +266,6 @@ async function handleFileSync(filePath, eventType) {
   } catch (error) {
     // Sync failed - add to retry queue (REL-02)
     logger.error({ filePath, error: error.message }, 'Sync failed, adding to retry queue');
-
-    sessionAnalyzer.trackOperation('sync_failed', filePath, {
-      error: error.message
-    });
 
     await retryQueue.add({
       type: 'sync_file',
@@ -386,20 +311,6 @@ async function shutdown(signal) {
       logger.info('Watcher closed');
     }
 
-    // Stop watchdog pings
-    if (watchdogInterval) {
-      clearInterval(watchdogInterval);
-      logger.info('Watchdog keepalive stopped');
-    }
-
-    // Signal systemd we're shutting down gracefully
-    try {
-      await systemdNotify.stopping();
-      logger.debug('Sent stopping notification to systemd');
-    } catch (err) {
-      logger.warn({ err }, 'Failed to send stopping notification');
-    }
-
     // Save retry queue (REL-04)
     if (retryQueue) {
       await retryQueue.save();
@@ -411,12 +322,6 @@ async function shutdown(signal) {
       health.stopPeriodicWrite();
       await health.update({ watcher_status: 'stopped' });
       logger.info('Health monitoring stopped');
-    }
-
-    // Write session analysis
-    if (sessionAnalyzer) {
-      await sessionAnalyzer.writeSession();
-      logger.info('Session analysis written');
     }
 
     logger.info('Shutdown complete');
