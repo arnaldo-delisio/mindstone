@@ -47,7 +47,7 @@
     "gpt-tokenizer": "^3.4.0",
     "gray-matter": "^4.0.3",
     "js-tiktoken": "^1.0.21",
-    "jsdom": "^28.0.0",
+    "jsdom": "26.1.0",
     "jszip": "^3.10.1",
     "mcp-oauth-password": "^0.2.2",
     "multer": "^2.0.2",
@@ -73,7 +73,6 @@
     "typescript": "^5.9.3"
   },
   "overrides": {
-    "html-encoding-sniffer": "^4.0.0",
-    "whatwg-url": "14.1.0"
+    "html-encoding-sniffer": "^4.0.0"
   }
 }
