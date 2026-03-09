@@ -73,6 +73,7 @@
     "typescript": "^5.9.3"
   },
   "overrides": {
-    "html-encoding-sniffer": "^4.0.0"
+    "html-encoding-sniffer": "^4.0.0",
+    "whatwg-url": "14.1.0"
   }
 }
