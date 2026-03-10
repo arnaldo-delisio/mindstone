@@ -7,7 +7,7 @@
  *
  * Filters:
  * - date: YYYY-MM-DD (defaults to today in your configured timezone)
- * - calendars: subset of ['personal', 'family', 'work', 'health'] (defaults to all)
+ * - calendars: string[] of calendar names from calendars.json (defaults to all)
  * - include_backlog: include untimed events (default: false)
  */
 
@@ -18,8 +18,8 @@ import { VAULT_TIMEZONE } from '../../services/gcal.js';
 export interface GetCalendarEventsArgs {
   /** YYYY-MM-DD. Defaults to today (your configured timezone). */
   date?: string;
-  /** Which calendars to include. Defaults to all 4. */
-  calendars?: Array<'personal' | 'family' | 'work' | 'health'>;
+  /** Which calendars to include. Defaults to all configured in calendars.json. */
+  calendars?: string[];
   /** Include events for the next N days (1 = today only, 7 = week view). Default: 1 */
   days?: number;
   /** Include backlog events (no start_time). Default: false */
@@ -41,7 +41,7 @@ export interface CalendarEvent {
 export async function getCalendarEventsTool(args: GetCalendarEventsArgs): Promise<string> {
   try {
     const days = args.days ?? 1;
-    const calendars = args.calendars ?? ['personal', 'family', 'work', 'health'];
+    const calendars = args.calendars ?? null;  // null means "all calendars"
     const includeBacklog = args.include_backlog ?? false;
 
     // Compute date range in UTC (events stored in UTC)
@@ -80,8 +80,8 @@ export async function getCalendarEventsTool(args: GetCalendarEventsArgs): Promis
       const startTime = fm.start_time as string | null;
       const cal = (fm.calendar ?? fm.gcal_calendar ?? 'personal') as string;
 
-      // Filter by calendar
-      if (!calendars.includes(cal as any)) continue;
+      // Filter by calendar (null = all calendars)
+      if (calendars !== null && !calendars.includes(cal)) continue;
 
       // Filter by date range (if start_time present)
       if (startTime) {
@@ -135,8 +135,8 @@ export const getCalendarEventsToolDef = {
       },
       calendars: {
         type: 'array' as const,
-        items: { type: 'string' as const, enum: ['personal', 'family', 'work', 'health'] as const },
-        description: 'Calendars to include (default: all 4)',
+        items: { type: 'string' as const },
+        description: 'Calendar names to include (from vault/calendars.json). Default: all configured calendars.',
       },
       days: {
         type: 'number' as const,

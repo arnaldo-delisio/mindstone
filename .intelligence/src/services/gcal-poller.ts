@@ -2,12 +2,13 @@
  * gcal-poller.ts — Bidirectional GCal ↔ Vault sync
  *
  * Runs every 5 minutes via node-cron.
- * Polls all 4 calendars using syncToken incremental sync.
+ * Polls all calendars listed in vault/calendars.json using syncToken incremental sync.
  * syncTokens persisted in gcal_sync_state Supabase table.
  *
  * On each changed event:
  * - vault-created event (gcal_event_id found in events/ files):
  *   - Moved in GCal → update start_time/end_time in vault
+ *   - Description changed in GCal → sync to vault body
  *   - Deleted in GCal → hard DELETE from vault (daemon syncs to local)
  * - GCal-only event (not in vault):
  *   - confirmed → upsert into events/ with source='gcal'
@@ -19,21 +20,45 @@
 import cron from 'node-cron';
 import { supabase } from './supabase.js';
 import { USER_ID } from '../config.js';
-import { isGcalEnabled, listChangedEvents } from './gcal.js';
+import { isGcalEnabled, listChangedEvents, getCalendarId, loadCalendarsConfig } from './gcal.js';
 import { logger } from '../utils/logger.js';
 import { createHash } from 'crypto';
 import matter from 'gray-matter';
 
-const CALENDARS = ['personal', 'family', 'work', 'health'] as const;
-type CalendarName = typeof CALENDARS[number];
-
-export function startGcalPoller(): void {
+export async function startGcalPoller(): Promise<void> {
   if (!isGcalEnabled()) {
     logger.info('GCal not configured — poller disabled');
     return;
   }
 
-  logger.info('Starting GCal poller (every 5 minutes)');
+  // Check for calendars configured in calendars.json
+  const calendarsConfig = await loadCalendarsConfig();
+  if (calendarsConfig.length === 0) {
+    logger.warn('No calendars configured in calendars.json — GCal poller will poll nothing. Add your calendar IDs to vault/calendars.json');
+    return;
+  }
+
+  // Warn about calendars referenced in events/ but missing from config
+  const { data: eventFiles } = await supabase
+    .from('files')
+    .select('frontmatter')
+    .like('path', 'events/%')
+    .eq('user_id', USER_ID)
+    .not('frontmatter->>status', 'in', '("done","cancelled")');
+
+  const configuredNames = new Set(calendarsConfig.map((c: {name: string}) => c.name));
+  const usedCalendars = new Set(
+    (eventFiles ?? [])
+      .map((r: any) => r.frontmatter?.calendar)
+      .filter(Boolean)
+  );
+  for (const calName of usedCalendars) {
+    if (!configuredNames.has(calName)) {
+      logger.warn({ calName }, `Calendar "${calName}" used in events/ but not in calendars.json — events will not sync`);
+    }
+  }
+
+  logger.info({ calendars: calendarsConfig.map((c: {name: string}) => c.name) }, 'Starting GCal poller (every 5 minutes)');
 
   cron.schedule('*/5 * * * *', async () => {
     const start = Date.now();
@@ -48,11 +73,12 @@ export function startGcalPoller(): void {
 }
 
 async function pollAllCalendars(): Promise<void> {
-  for (const calName of CALENDARS) {
+  const calendarsConfig = await loadCalendarsConfig();
+  for (const cal of calendarsConfig) {
     try {
-      await pollCalendar(calName);
+      await pollCalendar(cal.name);
     } catch (err: any) {
-      logger.error({ err, calendar: calName }, 'Calendar poll failed');
+      logger.error({ err, calendar: cal.name }, 'Calendar poll failed');
     }
   }
 }
@@ -84,21 +110,8 @@ async function clearSyncToken(calendarId: string): Promise<void> {
     );
 }
 
-// Get calendar ID from env var (same logic as gcal.ts getCalendarId)
-function getCalEnvId(calName: string): string {
-  const map: Record<string, string> = {
-    personal: 'GCAL_CALENDAR_PERSONAL',
-    family:   'GCAL_CALENDAR_FAMILY',
-    work:     'GCAL_CALENDAR_WORK',
-    health:   'GCAL_CALENDAR_HEALTH',
-  };
-  const calId = process.env[map[calName] ?? 'GCAL_CALENDAR_PERSONAL'];
-  if (!calId) throw new Error(`Calendar env var not set for: ${calName}`);
-  return calId;
-}
-
-async function pollCalendar(calName: CalendarName): Promise<void> {
-  const calendarId = getCalEnvId(calName);
+async function pollCalendar(calName: string): Promise<void> {
+  const calendarId = await getCalendarId(calName);
   const syncToken = await getSyncToken(calendarId);
 
   let result;
@@ -124,7 +137,7 @@ async function pollCalendar(calName: CalendarName): Promise<void> {
 
 async function processChangedEvents(
   events: Awaited<ReturnType<typeof listChangedEvents>>['events'],
-  calName: CalendarName
+  calName: string
 ): Promise<void> {
   for (const event of events) {
     try {
@@ -137,7 +150,7 @@ async function processChangedEvents(
 
 async function processOneEvent(
   event: Awaited<ReturnType<typeof listChangedEvents>>['events'][0],
-  calName: CalendarName
+  calName: string
 ): Promise<void> {
   // Look up vault event by gcal_event_id (direct column on files table)
   const { data: vaultEvent } = await supabase
@@ -166,7 +179,7 @@ async function processOneEvent(
   const endIso   = event.end?.dateTime   ?? event.end?.date;
 
   if (vaultEvent) {
-    // Vault-created event: update start/end times if changed
+    // Vault-created event: update start/end times and body if changed
     const fm = { ...vaultEvent.frontmatter } as Record<string, unknown>;
     let changed = false;
 
@@ -179,9 +192,17 @@ async function processOneEvent(
       changed = true;
     }
 
+    const gcalDesc = event.description ?? '';
+    const vaultBody = vaultEvent.body ?? '';
+    let updatedBody = vaultBody;
+    if (gcalDesc && gcalDesc !== vaultBody) {
+      updatedBody = gcalDesc;
+      changed = true;
+    }
+
     if (changed) {
-      await updateVaultFile(vaultEvent.path, fm, vaultEvent.body ?? '');
-      logger.info({ path: vaultEvent.path, startIso }, 'GCal move → vault event time updated');
+      await updateVaultFile(vaultEvent.path, fm, updatedBody);
+      logger.info({ path: vaultEvent.path, startIso, descSynced: gcalDesc !== vaultBody && !!gcalDesc }, 'GCal move → vault event updated');
     }
   } else {
     // With singleEvents: false, recurring exceptions (individually rescheduled/cancelled
@@ -210,7 +231,7 @@ async function processOneEvent(
     if (startIso) fm.start_time = startIso;
     if (endIso)   fm.end_time   = endIso;
 
-    const body = '';
+    const body = event.description ?? '';
     const fullContent = matter.stringify(body, fm);
     const content_hash = createHash('sha256').update(fullContent).digest('hex');
 

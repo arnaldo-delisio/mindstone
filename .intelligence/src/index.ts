@@ -154,7 +154,7 @@ async function main() {
 
     // Start reminder cron (fire-and-forget, not a queue poller)
     startReminderCron();
-    startGcalPoller();
+    await startGcalPoller();
     startEventExpiryCron();
   });
 
