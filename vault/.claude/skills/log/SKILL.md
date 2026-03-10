@@ -9,9 +9,8 @@ Append timestamped, categorized notes to today's daily journal (`daily/YYYY-MM-D
 
 ## Context
 
-Daily notes follow a structured format with four categories:
+Daily notes follow a structured format with three categories:
 - **Work**: Sessions, tasks, accomplishments
-- **Content**: Content creation, publishing, social media
 - **Learning**: Insights, discoveries, knowledge captured
 - **Ideas**: Future projects, experiments, thoughts
 
@@ -79,7 +78,6 @@ tail -1 ~/.claude/history.jsonl | jq -r '.sessionId'  # Get current session ID
 
 **B. Auto-detect category from content:**
 - **Work**: task, completed, fixed, implemented, session, planning, phase, executed, updated
-- **Content**: video, article, post, published, social, youtube, content
 - **Learning**: learned, discovered, insight, found, understanding, explored
 - **Ideas**: idea, experiment, future, could, should, maybe, build
 
@@ -269,7 +267,6 @@ Description text here.
 
 The tool auto-detects categories based on content:
 - **Work**: task, completed, fixed, implemented, session, planning
-- **Content**: video, article, post, published, social, youtube
 - **Learning**: learned, discovered, insight, found, understanding
 - **Ideas**: idea, experiment, future, could, should, maybe
 

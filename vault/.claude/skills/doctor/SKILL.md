@@ -18,7 +18,7 @@ First thing — always. Check before anything else:
 If missing, output exactly:
 
 ```
-This skill requires a vault context. Navigate to vault root (~/vault) and retry.
+This skill requires a vault context. Navigate to your vault root directory and retry.
 ```
 
 Then STOP — do not continue.

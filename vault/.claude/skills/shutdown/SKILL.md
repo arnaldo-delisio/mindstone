@@ -35,9 +35,7 @@ If yes — append to today's daily note under the appropriate section:
 - Work completed, problems solved → `## Work`
 - New ideas, future things to explore → `## Ideas`
 - Something learned → `## Learning`
-- Content-related → `## Content`
-
-Infer section from context. If unclear, ask: "Should this go under Work, Ideas, Learning, or Content?"
+Infer section from context. If unclear, ask: "Should this go under Work, Learning, or Ideas?"
 
 Use Edit to append to the existing section. Do NOT rewrite the whole file.
 
