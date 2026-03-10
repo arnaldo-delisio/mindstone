@@ -7,26 +7,17 @@
  *
  * Timezone: Configured via VAULT_TIMEZONE env var (default: UTC) — always pass timeZone with local datetime strings.
  *
- * Calendar routing: calendar field → calendar ID env var
- *   personal / (default)  → GCAL_CALENDAR_PERSONAL
- *   family                → GCAL_CALENDAR_FAMILY
- *   work                  → GCAL_CALENDAR_WORK
- *   health                → GCAL_CALENDAR_HEALTH
+ * Calendar routing: calendar name → gcal_id from calendars.json (loaded from Supabase files table).
+ * Configure vault/calendars.json with your calendar names and Google Calendar IDs.
  */
 
 import { google, calendar_v3 } from 'googleapis';
 import { logger } from '../utils/logger.js';
+import { supabase } from './supabase.js';
+import { USER_ID } from '../config.js';
 
 // Timezone for all GCal event operations. Set VAULT_TIMEZONE in .env (e.g. America/New_York).
 export const VAULT_TIMEZONE = process.env.VAULT_TIMEZONE || 'UTC';
-
-// Calendar name → env var mapping
-const CALENDAR_ENV_MAP: Record<string, string> = {
-  personal: 'GCAL_CALENDAR_PERSONAL',
-  family:   'GCAL_CALENDAR_FAMILY',
-  work:     'GCAL_CALENDAR_WORK',
-  health:   'GCAL_CALENDAR_HEALTH',
-};
 
 // Initialize OAuth2 client (singleton — module-level)
 function initOAuth2Client() {
@@ -51,19 +42,41 @@ export function isGcalEnabled(): boolean {
   return gcalApi !== null;
 }
 
-/**
- * Resolve calendar name to Google Calendar ID from env vars.
- * Throws if env var not set (calendar not configured by user yet).
- */
-export function getCalendarId(calendarName?: string): string {
-  const key = calendarName?.toLowerCase() ?? 'personal';
-  const envVar = CALENDAR_ENV_MAP[key];
-  if (!envVar) throw new Error(`Unknown calendar: "${key}". Valid: personal, family, work, health`);
-  const calId = process.env[envVar];
-  if (!calId) {
-    throw new Error(`Calendar "${key}" not configured. Set env var ${envVar} in Railway.`);
+export async function loadCalendarsConfig(): Promise<Array<{name: string; gcal_id: string}>> {
+  const { data, error } = await supabase
+    .from('files')
+    .select('body')
+    .eq('path', 'calendars.json')
+    .eq('user_id', USER_ID)
+    .maybeSingle();
+
+  if (error || !data?.body) {
+    logger.warn('calendars.json not found in vault (sync it from your local vault first)');
+    return [];
   }
-  return calId;
+  try {
+    return JSON.parse(data.body);
+  } catch {
+    logger.error('calendars.json is invalid JSON — fix the file in your vault root');
+    return [];
+  }
+}
+
+/**
+ * Resolve calendar name to Google Calendar ID from calendars.json (loaded from Supabase).
+ * Throws if calendar not found in config.
+ */
+export async function getCalendarId(calendarName?: string): Promise<string> {
+  const key = calendarName?.toLowerCase() ?? 'personal';
+  const config = await loadCalendarsConfig();
+  const entry = config.find(c => c.name.toLowerCase() === key);
+  if (!entry) {
+    throw new Error(`Calendar "${key}" not found in calendars.json. Add it to your vault's calendars.json file.`);
+  }
+  if (!entry.gcal_id || entry.gcal_id.includes('YOUR_')) {
+    throw new Error(`Calendar "${key}" has a placeholder gcal_id in calendars.json — set the real Google Calendar ID.`);
+  }
+  return entry.gcal_id;
 }
 
 export interface GcalEventInput {
@@ -91,7 +104,7 @@ export interface GcalEventResult {
 export async function createGcalEvent(input: GcalEventInput): Promise<GcalEventResult> {
   if (!gcalApi) throw new Error('GCal not enabled — missing env vars');
 
-  const calendarId = getCalendarId(input.calendar);
+  const calendarId = await getCalendarId(input.calendar);
 
   // End time defaults to start + 15 minutes (reminder mode)
   const startDt = new Date(input.start_time);
@@ -130,7 +143,7 @@ export async function updateGcalEvent(
 ): Promise<void> {
   if (!gcalApi) throw new Error('GCal not enabled — missing env vars');
 
-  const calendarId = getCalendarId(calendarName);
+  const calendarId = await getCalendarId(calendarName);
   const patch: calendar_v3.Schema$Event = {};
 
   if (updates.title) patch.summary = updates.title;
@@ -155,7 +168,7 @@ export async function updateGcalEvent(
 export async function deleteGcalEvent(gcal_event_id: string, calendarName?: string): Promise<void> {
   if (!gcalApi) return; // no-op if GCal not configured
 
-  const calendarId = getCalendarId(calendarName);
+  const calendarId = await getCalendarId(calendarName);
 
   try {
     await gcalApi.events.delete({ calendarId, eventId: gcal_event_id });
@@ -199,7 +212,7 @@ export async function listChangedEvents(
 ): Promise<ListChangedResult> {
   if (!gcalApi) throw new Error('GCal not enabled — missing env vars');
 
-  const calendarId = getCalendarId(calendarName);
+  const calendarId = await getCalendarId(calendarName);
 
   try {
     const params: calendar_v3.Params$Resource$Events$List = {
