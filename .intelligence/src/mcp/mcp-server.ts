@@ -10,6 +10,7 @@ import { manageNoteTool, manageNoteToolDef } from './tools/manage-note.js';
 import { manageEventTool, manageEventToolDef } from './tools/manage-event.js';
 import { listEventsTool, listEventsToolDef } from './tools/list-events.js';
 import { getCalendarEventsTool, getCalendarEventsToolDef } from './tools/get-calendar-events.js';
+import { doctorTool, doctorToolDef } from './tools/doctor.js';
 
 // read_note tool definition (inline — kept simple for Phase 2)
 const readNoteToolDef = {
@@ -49,7 +50,7 @@ export function createMcpServer(): Server {
     }
   );
 
-  // List available tools — exactly 7 active tools (4 note tools + 3 event tools)
+  // List available tools — exactly 8 active tools (4 note tools + 3 event tools + doctor)
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       extractContentToolDef,
@@ -59,6 +60,7 @@ export function createMcpServer(): Server {
       manageEventToolDef,
       listEventsToolDef,
       getCalendarEventsToolDef,
+      doctorToolDef,
     ]
   }));
 
@@ -160,6 +162,16 @@ export function createMcpServer(): Server {
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         return { content: [{ type: 'text', text: `get_calendar_events failed: ${msg}` }], isError: true };
+      }
+    }
+
+    if (name === 'doctor') {
+      try {
+        const result = await doctorTool();
+        return { content: [{ type: 'text', text: result }] };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return { content: [{ type: 'text', text: `doctor failed: ${msg}` }], isError: true };
       }
     }
 

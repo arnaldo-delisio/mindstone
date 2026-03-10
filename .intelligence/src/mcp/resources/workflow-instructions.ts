@@ -2,7 +2,7 @@
  * Workflow Instructions Resource
  *
  * Provides Claude with guidance on the available MCP tools and workflows.
- * Forked from vault — updated to document all 7 tools (4 note tools + 3 event tools).
+ * Forked from vault — updated to document all 8 tools (4 note tools + 3 event tools + doctor).
  *
  * Note: This resource is available but not registered in mcp-server.ts in Phase 2.
  * Future phases may register it as needed.
@@ -49,6 +49,9 @@ Supports filtering by status (upcoming/done/cancelled), date range, priority (hi
 ### get_calendar_events
 Fetch timed events from the vault for a given date or date range.
 Parameters: date (YYYY-MM-DD, defaults to today), days (1=today only, 7=week view), calendars (subset to query), include_backlog (untimed events).
+
+### doctor
+Start a health journaling session with the doctor/psychologist persona. Loads the Doctor persona, health state, and last 7 journal entries in one call. Use when user wants to journal, track health, log habits/sleep/meals, or get health insights.
 
 ## Content Capture Workflow
 
