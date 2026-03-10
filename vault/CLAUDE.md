@@ -1,27 +1,75 @@
 # MindStone Vault
 
-This is your personal AI OS vault. Claude reads this file at the start of every vault session.
+This is your personal AI OS vault. Files sync between your local machine and Supabase. Claude can read and write vault files directly, and can use MCP tools for backend operations: semantic search, content extraction, and calendar access. Read this file at the start of every vault session to know which tool to use for which job.
+
+---
+
+## MCP Tools — When to Use Each
+
+MindStone provides MCP tools for backend operations. Use them for the right jobs; use filesystem tools for everything else.
+
+| Tool | Use When | Example | Don't Use When |
+|------|----------|---------|----------------|
+| `search_notes` | User asks to find notes, search for content, or recall something they saved | "Find my notes on intermittent fasting" | Reading a known file path — use Read instead |
+| `extract_content` | User provides a URL (YouTube, web page, PDF, GitHub) | "Save this YouTube video to my vault" | User wants to read a file already in the vault |
+| `save_learning` | User says "save this", "add this to my library", or provides raw content to store with AI tagging | "Save these notes from the meeting" | User just wants a file written — use Write instead |
+| `manage_note` | Creating or updating a note that needs embeddings generated (searchable) | Creating a learning note that should appear in future searches | Writing a daily note or session log — use Write/Edit directly |
+| `read_note` | User wants to read a specific note by path and needs guaranteed freshness from the database | Retrieving a note that may have changed since last sync | The file exists locally and you can just use Read |
+| `manage_event` | Creating, updating, or deleting calendar events | "Schedule a dentist appointment for next Tuesday" | Just reading the `events/` directory |
+| `list_events` | User asks about upcoming events, schedule, or tasks | "What do I have this week?" | Reading a specific known event file |
+| `get_calendar_events` | User asks about Google Calendar events (not vault events) | "What's on my calendar today?" | Anything that can be done locally — this requires GCal API access |
+| `doctor` | `/doctor` skill is invoked | Starting a health journaling session | General-purpose use — this tool is only for the Doctor persona |
+
+> **Default rule:** Read/Write/Edit files directly unless the task requires AI processing, semantic search, or calendar API access. Never use MCP tools to read or write files that filesystem tools can handle.
+
+---
+
+## Sudo Workflow
+
+Claude can run sudo commands, but only ones the user has explicitly approved. Approved commands live in a sudoers allowlist file (e.g. `/etc/sudoers.d/claude`). When Claude needs to run a new sudo command that isn't in the allowlist, it asks the user first: "I need sudo access for `/path/to/command`. Add it to the allowlist?" The user approves, and the entry is added to the allowlist file. This keeps automation working smoothly while keeping the user in control of privileged access. Never assume a sudo command is pre-approved — always check first.
+
+---
 
 ## Skills
 
-Run these commands to activate skills:
+Run these commands to activate skills. Skills are prompt files in `.claude/skills/`.
 
-| Command | Description |
-|---------|-------------|
-| `/brief` | Morning briefing: today's calendar + active tasks |
-| `/shutdown` | End-of-day ritual: close today, week pulse, plan tomorrow |
-| `/log` | Log timestamped entries to today's daily note |
-| `/doctor` | Health journaling session with Doctor persona |
-| `/meeting` | Create a meeting transcript in library/meetings/ |
-| `/goals` | View and edit goals across annual/quarterly/weekly horizons |
-| `/setup` | First-run setup: vault structure, MCP connectivity, guided tour |
+| Command | What It Does |
+|---------|--------------|
+| `/brief` | Morning briefing: today's calendar events + open tasks |
+| `/shutdown` | End-of-day ritual: close today, week pulse, plan tomorrow, write weekly review on Fridays |
+| `/log` | Log a timestamped entry to today's daily note |
+| `/doctor` | Health journaling session with the Doctor persona |
+| `/meeting` | Create a meeting transcript file in `library/meetings/` |
+| `/goals` | View and update goals across annual, quarterly, and weekly horizons |
+| `/setup` | First-run setup: creates vault structure, tests MCP connectivity, guided tool tour |
+
+---
 
 ## Personas
 
+Personas are prompt files in `.personas/`. They give Claude a specialized role and context.
+
 | Persona | Invoked By | Purpose |
 |---------|------------|---------|
-| Doctor | `/doctor` skill | Personal health journaling companion |
+| Doctor | `/doctor` | Health journaling companion — reviews past entries, asks about symptoms and habits, tracks trends |
 
-## Current Context
+To create a new persona: see `vault/PERSONAS.md`.
 
-_Claude updates this section each session with active projects, current priorities, and open loops._
+---
+
+## Vault Structure
+
+Your vault is organized by content type. Here's what goes where:
+
+| Directory | Purpose |
+|-----------|---------|
+| `daily/` | Daily notes (one per day, created by `/log` and `/brief`) |
+| `library/` | Long-form saved content (web pages, YouTube summaries, meeting transcripts, PDFs) |
+| `events/` | Calendar events synced from Google Calendar |
+| `goals/` | Annual, quarterly, and weekly goals |
+| `reviews/` | Weekly reviews written by `/shutdown` |
+| `mocs/` | Maps of Content auto-generated by the intelligence pipeline |
+| `media/` | Local media files (images, attachments) |
+| `.personas/` | Persona prompt files |
+| `.claude/skills/` | Skill prompt files |
