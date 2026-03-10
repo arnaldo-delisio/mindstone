@@ -2,7 +2,7 @@
  * Workflow Instructions Resource
  *
  * Provides Claude with guidance on the available MCP tools and workflows.
- * Forked from vault — updated to document only the 4 Phase 2 shipped tools.
+ * Forked from vault — updated to document all 7 tools (4 note tools + 3 event tools).
  *
  * Note: This resource is available but not registered in mcp-server.ts in Phase 2.
  * Future phases may register it as needed.
@@ -36,6 +36,19 @@ Returns the raw markdown content including frontmatter.
 ### manage_note
 Create, update, or delete any vault file; triggers intelligence pipeline.
 Creating or updating a file queues it for auto-tagging, summarization, and embeddings.
+
+### manage_event
+Create, update, complete, or cancel vault events with GCal sync.
+Actions: create (creates event file + GCal entry), update (edits fields + GCal), complete (marks done), cancel (hard-deletes vault file + GCal event — GCal must be reachable).
+Required fields for create: title, start_time (ISO 8601), calendar (must match a name in calendars.json).
+
+### list_events
+Query vault events by date, priority, context, or tag.
+Supports filtering by status (upcoming/done/cancelled), date range, priority (high/medium/low), context, tags, and blocked_by.
+
+### get_calendar_events
+Fetch timed events from the vault for a given date or date range.
+Parameters: date (YYYY-MM-DD, defaults to today), days (1=today only, 7=week view), calendars (subset to query), include_backlog (untimed events).
 
 ## Content Capture Workflow
 

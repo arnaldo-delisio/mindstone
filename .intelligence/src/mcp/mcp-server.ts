@@ -7,6 +7,9 @@ import { extractContentTool, extractContentToolDef } from './tools/extract-conte
 import { searchNotesTool, searchNotesToolDef } from './tools/search.js';
 import { readNoteTool } from './tools/read.js';
 import { manageNoteTool, manageNoteToolDef } from './tools/manage-note.js';
+import { manageEventTool, manageEventToolDef } from './tools/manage-event.js';
+import { listEventsTool, listEventsToolDef } from './tools/list-events.js';
+import { getCalendarEventsTool, getCalendarEventsToolDef } from './tools/get-calendar-events.js';
 
 // read_note tool definition (inline — kept simple for Phase 2)
 const readNoteToolDef = {
@@ -46,13 +49,16 @@ export function createMcpServer(): Server {
     }
   );
 
-  // List available tools — exactly 4 active tools
+  // List available tools — exactly 7 active tools (4 note tools + 3 event tools)
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: [
       extractContentToolDef,
       searchNotesToolDef,
       readNoteToolDef,
       manageNoteToolDef,
+      manageEventToolDef,
+      listEventsToolDef,
+      getCalendarEventsToolDef,
     ]
   }));
 
@@ -124,6 +130,36 @@ export function createMcpServer(): Server {
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         return { content: [{ type: 'text', text: `manage_note failed: ${msg}` }], isError: true };
+      }
+    }
+
+    if (name === 'manage_event') {
+      try {
+        const result = await manageEventTool(args as any);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return { content: [{ type: 'text', text: `manage_event failed: ${msg}` }], isError: true };
+      }
+    }
+
+    if (name === 'list_events') {
+      try {
+        const result = await listEventsTool(args as any);
+        return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return { content: [{ type: 'text', text: `list_events failed: ${msg}` }], isError: true };
+      }
+    }
+
+    if (name === 'get_calendar_events') {
+      try {
+        const result = await getCalendarEventsTool(args as any);
+        return { content: [{ type: 'text', text: result }] };  // already returns a string
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        return { content: [{ type: 'text', text: `get_calendar_events failed: ${msg}` }], isError: true };
       }
     }
 
