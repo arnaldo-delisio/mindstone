@@ -1,25 +1,39 @@
-# Environment files — never commit secrets
-.daemon/.env
-.intelligence/.env
+# MindStone .gitignore
 
-# Node modules
+# Environment variables — NEVER commit these
+.env
+.env.*
+*.env
+
+# Google Calendar OAuth credentials
+credentials.json
+token.json
+
+# Dependencies
 node_modules/
-*/node_modules/
 
 # Build output
-.intelligence/dist/
-*/dist/
-
-# Sync daemon state — local to each deployer
-.sync/
-**/.sync/
+dist/
+.next/
 
 # OS files
 .DS_Store
 Thumbs.db
 
-# Editor
+# Logs
+*.log
+npm-debug.log*
+
+# pm2 state
+.pm2/
+
+# Sync daemon state
+.daemon/.sync/
+
+# IDE
+.vscode/settings.json
 .idea/
-.vscode/
-*.swp
-*.swo
+
+# Temporary files
+*.tmp
+*.temp
